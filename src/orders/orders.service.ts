@@ -8,14 +8,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import {
-  Between,
-  FindManyOptions,
-  MoreThanOrEqual,
-  LessThanOrEqual,
-  ObjectId,
-  Repository,
-} from 'typeorm';
+import { ObjectId, Repository } from 'typeorm';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
@@ -112,7 +105,8 @@ export class OrdersService {
     endDate?: Date,
   ): Promise<Order[]> {
     try {
-      const where: FindManyOptions<Order>['where'] = {};
+      // Construir filtro compatible con MongoDB
+      const where: Record<string, unknown> = {};
 
       if (userId) {
         where.userId = userId;
@@ -126,21 +120,23 @@ export class OrdersService {
         where.isCod = isCod;
       }
 
-      // Filtrado por rango de fechas
-      if (startDate && endDate) {
-        where.createdAt = Between(startDate, endDate);
-      } else if (startDate) {
-        // Solo fecha inicial, se toma desde startDate hasta el momento actual
-        where.createdAt = MoreThanOrEqual(startDate);
-      } else if (endDate) {
-        // Solo fecha final: <= endDate
-        where.createdAt = LessThanOrEqual(endDate);
+      // Filtrado por rango de fechas usando operadores nativos de MongoDB
+      if (startDate || endDate) {
+        where.createdAt = {};
+        if (startDate) {
+          (where.createdAt as Record<string, Date>).$gte = startDate;
+        }
+        if (endDate) {
+          (where.createdAt as Record<string, Date>).$lte = endDate;
+        }
       }
 
-      const orders = await this.orderRepository.find({
-        where,
-        order: { createdAt: 'DESC' },
-      });
+      const orders = await this.orderRepository.manager
+        .getMongoRepository(Order)
+        .find({
+          where,
+          order: { createdAt: 'DESC' },
+        });
 
       return orders;
     } catch (error: unknown) {
